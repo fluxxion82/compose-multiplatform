@@ -26,8 +26,11 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        if (extra["compose.useMavenLocal"] == "true") {
-            mavenLocal() // mavenLocal should be the first to get the correct version of skiko during a local build.
+        // mavenLocal first for compose artifacts
+        mavenLocal()
+        // Custom local maven for linuxArm64 compose artifacts
+        maven {
+            url = uri(rootDir.resolve("../../../bitchatKmp/apps/embedded/maven"))
         }
         google()
         mavenCentral()
@@ -39,6 +42,7 @@ dependencyResolutionManagement {
             version("compose", extra["compose.version"].toString())
         }
     }
+
 }
 
 include(":SplitPane:library")

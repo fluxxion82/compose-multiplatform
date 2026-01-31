@@ -10,6 +10,18 @@ plugins {
 subprojects {
     version = findProperty("deploy.version")!!
 
+    // Substitute skiko linuxArm64 version for EGL support
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.skiko" &&
+                requested.name == "skiko-linuxarm64" &&
+                requested.version == "0.9.37.3") {
+                useVersion("0.9.37.3-egl-SNAPSHOT")
+                because("Using EGL-enabled Skiko build for linuxArm64")
+            }
+        }
+    }
+
     plugins.withId("java") {
         configureIfExists<JavaPluginExtension> {
             sourceCompatibility = JavaVersion.VERSION_11

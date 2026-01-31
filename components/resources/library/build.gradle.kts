@@ -12,6 +12,29 @@ plugins {
     id("org.jetbrains.kotlinx.binary-compatibility-validator")
 }
 
+// Substitute compose dependencies for linuxArm64 with the 9999.0.0-SNAPSHOT versions that have linuxArm64 support
+// This is needed because the standard compose libs at 1.9.0 don't have linuxArm64 variants
+// Only apply to linuxArm64-specific compile/runtime configurations, not metadata or other platforms
+configurations.matching { config ->
+    val name = config.name.lowercase()
+    // Only match linuxArm64 compile and runtime configurations, exclude metadata
+    (name.contains("linuxarm64") && !name.contains("metadata")) &&
+    (name.contains("compil") || name.contains("runtime") || name.contains("klib"))
+}.all {
+    resolutionStrategy.eachDependency {
+        // Upgrade all compose dependencies to 9999.0.0-SNAPSHOT for linuxArm64 configurations
+        if (requested.group.startsWith("org.jetbrains.compose")) {
+            useVersion("9999.0.0-SNAPSHOT")
+            because("Using locally built Compose artifacts with linuxArm64 support")
+        }
+        // Also ensure Skiko uses the EGL-enabled version
+        if (requested.group == "org.jetbrains.skiko" && requested.name.contains("linuxarm64")) {
+            useVersion("0.9.37.3-egl-SNAPSHOT")
+            because("Using EGL-enabled Skiko build for linuxArm64")
+        }
+    }
+}
+
 kotlin {
     jvm("desktop")
     androidTarget {
@@ -27,6 +50,7 @@ kotlin {
     iosX64()
     iosArm64()
     iosSimulatorArm64()
+    linuxArm64()
     js {
         browser {
             testTask(Action {
@@ -54,7 +78,8 @@ kotlin {
     macosX64()
     macosArm64()
 
-    applyDefaultHierarchyTemplate()
+    // Don't use default hierarchy - we need custom handling for linuxArm64
+    // applyDefaultHierarchyTemplate()
     sourceSets {
         all {
             languageSettings {
@@ -69,11 +94,11 @@ kotlin {
         //          common
         //       ┌────┴────┐
         //    skiko       blocking
-        //      │      ┌─────┴────────┐
-        //  ┌───┴───┬──│────────┐     │
-        //  │      native       │ jvmAndAndroid
-        //  │    ┌───┴───┐      │   ┌───┴───┐
-        // web   ios    macos   desktop    android
+        //      │      ┌─────┴────────────────┐
+        //  ┌───┴───┬──│────────┐             │
+        //  │   skikoNative     │      jvmAndAndroid
+        //  │    ┌───┴───┐      │        ┌────┼────┐
+        // web   ios    macos  desktop android  linuxArm64
 
         val commonMain by getting {
             dependencies {
@@ -138,31 +163,113 @@ kotlin {
         val androidUnitTest by getting {
             dependsOn(jvmAndAndroidTest)
         }
-        val nativeMain by getting {
+
+        // Native main - provides Darwin-based XML parsing (NSXMLParser)
+        // Used by iOS and macOS targets
+        val nativeMain by creating {
+            dependsOn(commonMain)
+        }
+        val nativeTest by creating {
+            dependsOn(commonTest)
+        }
+
+        // Darwin-native targets (iOS, macOS) - have Foundation APIs and Skiko
+        val darwinMain by creating {
             dependsOn(skikoMain)
             dependsOn(blockingMain)
+            dependsOn(nativeMain)
         }
-        val nativeTest by getting {
+        val darwinTest by creating {
             dependsOn(skikoTest)
             dependsOn(blockingTest)
+            dependsOn(nativeTest)
         }
-        val webMain by getting {
+
+        // iOS targets
+        val iosMain by creating {
+            dependsOn(darwinMain)
+        }
+        val iosTest by creating {
+            dependsOn(darwinTest)
+        }
+        val iosX64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosX64Test by getting {
+            dependsOn(iosTest)
+        }
+        val iosArm64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosArm64Test by getting {
+            dependsOn(iosTest)
+        }
+        val iosSimulatorArm64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosSimulatorArm64Test by getting {
+            dependsOn(iosTest)
+        }
+
+        // macOS targets
+        val macosMain by creating {
+            dependsOn(darwinMain)
+        }
+        val macosTest by creating {
+            dependsOn(darwinTest)
+        }
+        val macosX64Main by getting {
+            dependsOn(macosMain)
+        }
+        val macosX64Test by getting {
+            dependsOn(macosTest)
+        }
+        val macosArm64Main by getting {
+            dependsOn(macosMain)
+        }
+        val macosArm64Test by getting {
+            dependsOn(macosTest)
+        }
+
+        // linuxArm64 - has Skiko (EGL version) but NOT Darwin Foundation APIs
+        // Uses explicit platform-specific dependencies because it has its own implementations
+        // (can't use skikoMain because it conflicts with linuxArm64-specific code)
+        // The resolution strategy handles upgrading compose deps to 9999.0.0-SNAPSHOT for linuxArm64
+        val linuxArm64Main by getting {
+            dependsOn(blockingMain)
+            dependencies {
+                // Direct linuxArm64 artifacts - these provide Skiko transitively
+                implementation("org.jetbrains.compose.foundation:foundation-linuxarm64:9999.0.0-SNAPSHOT")
+                implementation("org.jetbrains.compose.runtime:runtime-linuxarm64:9999.0.0-SNAPSHOT")
+                implementation("org.jetbrains.compose.ui:ui-linuxarm64:9999.0.0-SNAPSHOT")
+                implementation("org.jetbrains.compose.ui:ui-graphics-linuxarm64:9999.0.0-SNAPSHOT")
+                implementation("org.jetbrains.compose.ui:ui-unit-linuxarm64:9999.0.0-SNAPSHOT")
+                implementation("org.jetbrains.compose.ui:ui-geometry-linuxarm64:9999.0.0-SNAPSHOT")
+                implementation("org.jetbrains.compose.ui:ui-text-linuxarm64:9999.0.0-SNAPSHOT")
+            }
+        }
+        val linuxArm64Test by getting {
+            dependsOn(blockingTest)
+        }
+
+        // Web targets (JS, WASM)
+        val webMain by creating {
             dependsOn(skikoMain)
             dependencies {
                  implementation(libs.kotlinx.browser)
             }
         }
+        val webTest by creating {
+            dependsOn(skikoTest)
+        }
         val jsMain by getting {
             dependsOn(webMain)
         }
-        val wasmJsMain by getting {
-            dependsOn(webMain)
-        }
-        val webTest by getting {
-            dependsOn(skikoTest)
-        }
         val jsTest by getting {
             dependsOn(webTest)
+        }
+        val wasmJsMain by getting {
+            dependsOn(webMain)
         }
         val wasmJsTest by getting {
             dependsOn(webTest)

@@ -57,6 +57,7 @@ private fun Project.onKgpApplied(config: Provider<ResourcesExtension>, kgp: Kotl
     }
 
     configureSyncIosComposeResources(kotlinExtension)
+    configureSyncLinuxComposeResources(kotlinExtension)
 }
 
 internal fun Project.onKotlinJvmApplied(config: Provider<ResourcesExtension>) {
