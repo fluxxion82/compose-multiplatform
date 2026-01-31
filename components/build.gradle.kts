@@ -19,6 +19,13 @@ subprojects {
                 useVersion("0.9.37.3-egl-SNAPSHOT")
                 because("Using EGL-enabled Skiko build for linuxArm64")
             }
+            // Force Kotlin stdlib artifacts to the configured kotlin.version (2.2.10) because
+            // 2.2.21 metadata artifacts are not published and break common metadata compilation.
+            if (requested.group == "org.jetbrains.kotlin" &&
+                requested.name.startsWith("kotlin-stdlib")) {
+                useVersion(findProperty("kotlin.version")!!.toString())
+                because("Align Kotlin stdlib to kotlin.version to ensure common stdlib artifacts resolve")
+            }
         }
     }
 

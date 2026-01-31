@@ -36,6 +36,11 @@ configurations.matching { config ->
 }
 
 kotlin {
+    // Toggle web targets when needed; default off to avoid JS/Wasm toolchain churn while publishing native artifacts
+    val enableWebTargets = providers.gradleProperty("enableWebTargets")
+        .map { it.toBoolean() }
+        .getOrElse(false)
+
     jvm("desktop")
     androidTarget {
         publishLibraryVariants("release")
@@ -51,29 +56,31 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     linuxArm64()
-    js {
-        browser {
-            testTask(Action {
-                enabled = false
-            })
+    if (enableWebTargets) {
+        js {
+            browser {
+                testTask(Action {
+                    enabled = false
+                })
+            }
         }
-    }
 
-    @OptIn(ExperimentalWasmDsl::class)
-    wasmJs {
-        compilations.getByName("test").compileTaskProvider.configure {
-            // https://youtrack.jetbrains.com/issue/KT-69014
-            compilerOptions.freeCompilerArgs.add("-Xwasm-enable-array-range-checks")
+        @OptIn(ExperimentalWasmDsl::class)
+        wasmJs {
+            compilations.getByName("test").compileTaskProvider.configure {
+                // https://youtrack.jetbrains.com/issue/KT-69014
+                compilerOptions.freeCompilerArgs.add("-Xwasm-enable-array-range-checks")
+            }
+            browser {
+                testTask(Action {
+                    useKarma {
+                        useChromeHeadless()
+                        useConfigDirectory(project.projectDir.resolve("karma.config.d").resolve("wasm"))
+                    }
+                })
+            }
+            binaries.executable()
         }
-        browser {
-            testTask(Action {
-                useKarma {
-                    useChromeHeadless()
-                    useConfigDirectory(project.projectDir.resolve("karma.config.d").resolve("wasm"))
-                }
-            })
-        }
-        binaries.executable()
     }
     macosX64()
     macosArm64()
@@ -252,27 +259,29 @@ kotlin {
             dependsOn(blockingTest)
         }
 
-        // Web targets (JS, WASM)
-        val webMain by creating {
-            dependsOn(skikoMain)
-            dependencies {
-                 implementation(libs.kotlinx.browser)
+        // Web targets (JS, WASM) - optional to allow native-only publishing
+        if (enableWebTargets) {
+            val webMain by creating {
+                dependsOn(skikoMain)
+                dependencies {
+                    implementation(libs.kotlinx.browser)
+                }
             }
-        }
-        val webTest by creating {
-            dependsOn(skikoTest)
-        }
-        val jsMain by getting {
-            dependsOn(webMain)
-        }
-        val jsTest by getting {
-            dependsOn(webTest)
-        }
-        val wasmJsMain by getting {
-            dependsOn(webMain)
-        }
-        val wasmJsTest by getting {
-            dependsOn(webTest)
+            val webTest by creating {
+                dependsOn(skikoTest)
+            }
+            val jsMain by getting {
+                dependsOn(webMain)
+            }
+            val jsTest by getting {
+                dependsOn(webTest)
+            }
+            val wasmJsMain by getting {
+                dependsOn(webMain)
+            }
+            val wasmJsTest by getting {
+                dependsOn(webTest)
+            }
         }
     }
 }
