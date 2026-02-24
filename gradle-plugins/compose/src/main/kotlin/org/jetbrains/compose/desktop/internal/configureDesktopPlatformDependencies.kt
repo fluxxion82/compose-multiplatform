@@ -29,14 +29,12 @@ internal fun Project.configureDesktopPlatformDependencies() {
         )
 
         project.configurations.all { configuration ->
-            if (!configuration.isCanBeConsumed || configuration.isCanBeResolved) {
+            if (configuration.isCanBeResolved && !configuration.isCanBeConsumed) {
                 try {
-                    configuration.dependencyConstraints.add(project.dependencies.constraints.create("org.jetbrains.skiko:skiko-awt-runtime") {
-                        it.attributes { attrs ->
-                            attrs.attribute(OperatingSystemFamily.OPERATING_SYSTEM_ATTRIBUTE, os)
-                            attrs.attribute(MachineArchitecture.ARCHITECTURE_ATTRIBUTE, arch)
-                        }
-                    })
+                    configuration.attributes { attrs ->
+                        attrs.attribute(OperatingSystemFamily.OPERATING_SYSTEM_ATTRIBUTE, os)
+                        attrs.attribute(MachineArchitecture.ARCHITECTURE_ATTRIBUTE, arch)
+                    }
                 } catch (_: Throwable) {
                     project.logger.debug("Skipping os/arch constraint for config ${configuration.name}")
                 }
