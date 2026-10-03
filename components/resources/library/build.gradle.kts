@@ -11,6 +11,31 @@ plugins {
     id("org.jetbrains.kotlinx.binary-compatibility-validator")
 }
 
+val composeVersion = libs.versions.compose.get()
+val material3Version = libs.versions.material3.get()
+
+// Fork publications sort below upstream releases. Force Linux dependencies to the staged fork.
+configurations.matching { config ->
+    val name = config.name.lowercase()
+    (name.contains("linuxarm64") && !name.contains("metadata")) &&
+    (name.contains("compil") || name.contains("runtime") || name.contains("klib"))
+}.all {
+    resolutionStrategy.eachDependency {
+        when {
+            requested.group == "org.jetbrains.compose.material3" -> {
+                useVersion(material3Version)
+                because("Using staged Compose Material3 artifacts with linuxArm64 support")
+            }
+            requested.group.startsWith("org.jetbrains.compose") &&
+                requested.group != "org.jetbrains.compose.annotation-internal" &&
+                requested.group != "org.jetbrains.compose.collection-internal" -> {
+                useVersion(composeVersion)
+                because("Using staged Compose artifacts with linuxArm64 support")
+            }
+        }
+    }
+}
+
 kotlin {
     jvm("desktop")
     androidTarget {
@@ -25,6 +50,7 @@ kotlin {
     }
     iosArm64()
     iosSimulatorArm64()
+    linuxArm64()
     js {
         browser {
             testTask {
@@ -48,7 +74,6 @@ kotlin {
     }
     macosArm64()
 
-    applyDefaultHierarchyTemplate()
     sourceSets {
         all {
             languageSettings {
@@ -63,11 +88,11 @@ kotlin {
         //          common
         //       ┌────┴────┐
         //    skiko       blocking
-        //      │      ┌─────┴────────┐
-        //  ┌───┴───┬──│────────┐     │
-        //  │      native       │ jvmAndAndroid
-        //  │    ┌───┴───┐      │   ┌───┴───┐
-        // web   ios    macos   desktop    android
+        //      │      ┌─────┴────────────────┐
+        //  ┌───┴───┬──│────────┐             │
+        //  │   skikoNative     │      jvmAndAndroid
+        //  │    ┌───┴───┐      │        ┌────┼────┐
+        // web   ios    macos  desktop android  linuxArm64
 
         val commonMain by getting {
             dependencies {
@@ -96,6 +121,9 @@ kotlin {
         val skikoTest by creating {
             dependsOn(commonTest)
         }
+        val pureKotlinXmlMain by creating {
+            dependsOn(commonMain)
+        }
         val jvmAndAndroidMain by creating {
             dependsOn(blockingMain)
         }
@@ -105,6 +133,7 @@ kotlin {
         val desktopMain by getting {
             dependsOn(skikoMain)
             dependsOn(jvmAndAndroidMain)
+            dependsOn(pureKotlinXmlMain)
         }
         val desktopTest by getting {
             dependsOn(skikoTest)
@@ -132,31 +161,98 @@ kotlin {
         val androidUnitTest by getting {
             dependsOn(jvmAndAndroidTest)
         }
-        val nativeMain by getting {
+
+        // Native main - provides Darwin-based XML parsing (NSXMLParser)
+        // Used by iOS and macOS targets
+        val nativeMain by creating {
+            dependsOn(commonMain)
+        }
+        val nativeTest by creating {
+            dependsOn(commonTest)
+        }
+
+        // Darwin-native targets (iOS, macOS) - have Foundation APIs and Skiko
+        val darwinMain by creating {
             dependsOn(skikoMain)
             dependsOn(blockingMain)
+            dependsOn(nativeMain)
         }
-        val nativeTest by getting {
+        val darwinTest by creating {
             dependsOn(skikoTest)
             dependsOn(blockingTest)
+            dependsOn(nativeTest)
         }
-        val webMain by getting {
+
+        // iOS targets
+        val iosMain by creating {
+            dependsOn(darwinMain)
+        }
+        val iosTest by creating {
+            dependsOn(darwinTest)
+        }
+        val iosArm64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosArm64Test by getting {
+            dependsOn(iosTest)
+        }
+        val iosSimulatorArm64Main by getting {
+            dependsOn(iosMain)
+        }
+        val iosSimulatorArm64Test by getting {
+            dependsOn(iosTest)
+        }
+
+        // macOS targets
+        val macosMain by creating {
+            dependsOn(darwinMain)
+        }
+        val macosTest by creating {
+            dependsOn(darwinTest)
+        }
+        val macosArm64Main by getting {
+            dependsOn(macosMain)
+        }
+        val macosArm64Test by getting {
+            dependsOn(macosTest)
+        }
+
+        // linuxArm64 has its own resource implementations and no Darwin Foundation APIs.
+        val linuxArm64Main by getting {
+            dependsOn(blockingMain)
+            dependsOn(pureKotlinXmlMain)
+            dependencies {
+                implementation("org.jetbrains.compose.foundation:foundation-linuxarm64:$composeVersion")
+                implementation("org.jetbrains.compose.runtime:runtime-linuxarm64:$composeVersion")
+                implementation("org.jetbrains.compose.ui:ui-linuxarm64:$composeVersion")
+                implementation("org.jetbrains.compose.ui:ui-graphics-linuxarm64:$composeVersion")
+                implementation("org.jetbrains.compose.ui:ui-unit-linuxarm64:$composeVersion")
+                implementation("org.jetbrains.compose.ui:ui-geometry-linuxarm64:$composeVersion")
+                implementation("org.jetbrains.compose.ui:ui-text-linuxarm64:$composeVersion")
+            }
+        }
+        val linuxArm64Test by getting {
+            dependsOn(blockingTest)
+        }
+
+        // Web targets (JS, WASM)
+        val webMain by creating {
             dependsOn(skikoMain)
             dependencies {
                  implementation(libs.kotlinx.browser)
             }
         }
+        val webTest by creating {
+            dependsOn(skikoTest)
+        }
         val jsMain by getting {
             dependsOn(webMain)
         }
-        val wasmJsMain by getting {
-            dependsOn(webMain)
-        }
-        val webTest by getting {
-            dependsOn(skikoTest)
-        }
         val jsTest by getting {
             dependsOn(webTest)
+        }
+        val wasmJsMain by getting {
+            dependsOn(webMain)
         }
         val wasmJsTest by getting {
             dependsOn(webTest)

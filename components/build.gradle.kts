@@ -10,6 +10,15 @@ plugins {
 subprojects {
     version = findProperty("deploy.version")!!
 
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.kotlin" && requested.name.startsWith("kotlin-stdlib")) {
+                useVersion(findProperty("kotlin.version")!!.toString())
+                because("Align Kotlin standard library artifacts with the configured compiler")
+            }
+        }
+    }
+
     plugins.withId("java") {
         configureIfExists<JavaPluginExtension> {
             sourceCompatibility = JavaVersion.VERSION_11

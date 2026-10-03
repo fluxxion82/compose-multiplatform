@@ -27,7 +27,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositories {
         if (extra["compose.useMavenLocal"] == "true") {
-            mavenLocal() // mavenLocal should be the first to get the correct version of skiko during a local build.
+            mavenLocal()
         }
         google()
         mavenCentral()
